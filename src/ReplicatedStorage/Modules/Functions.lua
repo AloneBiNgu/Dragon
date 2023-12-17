@@ -9,6 +9,11 @@ if ( not RunService:IsServer() ) then
     return Functions
 end
 
+function Functions.FireClient(Player : Player, data : table, ... : any)
+    print(data)
+    data['Remote']:FireClient(Player, ...)
+end
+
 function Functions.FireAllClient(data : table, ... : any)
     for i,v in pairs(Players:GetChildren()) do
         if (v.Character) then

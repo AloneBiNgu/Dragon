@@ -1,6 +1,7 @@
 -- [[ Services ]] --
 local PlayerService = game:GetService('Players');
 local ReplicatedStorage = game:GetService('ReplicatedStorage')
+local RunService = game:GetService('RunService')
 local ServerStorage = game:GetService('ServerStorage')
 
 -- [[ Modules ]] --
@@ -42,6 +43,8 @@ local function onPlayerAdded(Player : Player)
     print('Added attributes', Player.Name)
 
     Player.CharacterAdded:Connect(function(character)
+        RunService.Heartbeat:Wait()
+        character.Parent = workspace.Characters
         local Tool: Tool = ServerStorage.Source:WaitForChild('Dragon'):Clone()
         Tool.Parent = Player.Backpack
         Tool.Enabled = true
