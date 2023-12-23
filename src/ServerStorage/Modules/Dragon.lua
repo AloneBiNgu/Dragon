@@ -39,6 +39,8 @@ Dragon.Skills = {
     }
 }
 
+-- [[ M1 ]] --
+
 function Dragon.Sword(Player : Player, params : any)
     local Character : Model = Player.Character
     local HumanoidRootPart : BasePart = Character.HumanoidRootPart
@@ -72,6 +74,73 @@ function Dragon.DestroySword(Player : Player, params : any)
         { Player = Player, Character = Character }
     })
 end
+
+function Dragon.Attack(Player : Player, params : any)
+    local Character : Model = Player.Character
+    local HumanoidRootPart : BasePart = Character.HumanoidRootPart
+
+    local Combo = params['Combo']
+    local HitData = params['HitData']
+
+    if (Combo == 3) then
+        Functions.FireAllClient({
+            Origin = HumanoidRootPart,
+            Distance = 125,
+            Remote = ReplicatedStorage.Shared.Remotes.Events.Effect
+        }, {
+            'SwordGround',
+            { Player = Player, Character = Character }
+        })
+    end
+
+    local hit = {}
+    for i,v in pairs(HitData) do
+        local target = v.Parent
+        if (target == Character) then continue end
+        local Humanoid = target:FindFirstChild('Humanoid')
+        local HRP = target:FindFirstChild('HumanoidRootPart')
+
+        if (Humanoid and Humanoid.Health > 0 and hit[target] == nil) then
+            hit[target] = true
+            Humanoid:TakeDamage(5)
+
+            HRP.CFrame = CFrame.lookAt(HRP.Position, Character:GetModelCFrame().Position)
+            
+            if (Combo == 3) then
+                local BodyVelocity = Instance.new('BodyVelocity', HRP)
+                BodyVelocity.MaxForce = Vector3.new(99999, 99999, 99999)
+                BodyVelocity.P = 50
+                BodyVelocity.Velocity = (Character:GetModelCFrame().LookVector * 25) + Vector3.new(0, 30, 0)
+                Debris:AddItem(BodyVelocity, .1)
+            else
+                local BodyVelocity = Instance.new('BodyVelocity', HRP)
+                BodyVelocity.MaxForce = Vector3.new(99999, 99999, 99999)
+                BodyVelocity.P = 10
+                BodyVelocity.Velocity = Character:GetModelCFrame().LookVector * 20
+                Debris:AddItem(BodyVelocity, .2)
+            end
+
+            Functions.FireAllClient({
+                Origin = HumanoidRootPart,
+                Distance = 125,
+                Remote = ReplicatedStorage.Shared.Remotes.Events.Effect
+            }, {
+                'Hit',
+                { Character = target }
+            })
+
+            local player = Players:GetPlayerFromCharacter(target)
+            if (player) then
+                player:SetAttribute('Stunned', true)
+                task.delay(1, function()
+                    player:SetAttribute('Stunned', false)
+                end)
+            end
+        end
+    end
+end
+
+-- [[ Skills ]]--
 
 function Dragon.Z(Player : Player, params : any)
     CooldownModule.Add(Player, 'Z', Dragon.Skills['Z'].Cooldown)

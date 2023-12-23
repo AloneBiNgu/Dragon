@@ -12,6 +12,7 @@ local BezierModule = require(ReplicatedStorage.Shared.Modules:WaitForChild('Bezi
 local OthersModule = require(ReplicatedStorage.Shared.Modules:WaitForChild('Others'))
 local CameraShakerModule = require(ReplicatedStorage.Shared.Modules:WaitForChild('CameraShaker'))
 local RockModule = require(ReplicatedStorage.Shared.Modules:WaitForChild('RocksModule'))
+local ZoneModule = require(ReplicatedStorage.Shared.Modules:WaitForChild('Zone'))
 
 -- [[ Folder ]] --
 local Assets = ReplicatedStorage.Shared.Assets
@@ -35,6 +36,8 @@ local Dragon = {
     ['SetupSword'] = function(self : Player, ... : any)
         local Character : Model = self.Character
         local Humanoid : Instance = Character.Humanoid
+        local HumanoidRootPart : BasePart = Character.HumanoidRootPart
+        local Mouse = self:GetMouse()
 
         local Idle : AnimationTrack = Humanoid:LoadAnimation(Animations:WaitForChild('MaceIdle'))
         local Walk : AnimationTrack = Humanoid:LoadAnimation(Animations:WaitForChild('MaceWalk'))
@@ -42,6 +45,11 @@ local Dragon = {
 
         local connection : RBXScriptConnection
         connection = RunService.Heartbeat:Connect(function()
+            if (self:GetAttribute('Attacking') == true or self:GetAttribute('Stunned') == true) then
+                Walk:Stop()
+                Idle:Stop()
+                return
+            end
             if (Humanoid.MoveDirection.Magnitude > 0) then
                 if (Idle.IsPlaying == true) then Idle:Stop() end
                 if (Walk.IsPlaying == false) then Walk:Play() end
@@ -55,17 +63,7 @@ local Dragon = {
                 connection:Disconnect()
             end
         end)
-    end,
-    ['Sword'] = function(self : Player, ... : any)
-        local data : table = ...
-        local Player : Player = data['Player']
-        local Character : Model = data['Character']
-        local Humanoid : Instance = Character.Humanoid
-        local HumanoidRootPart : BasePart = Character.HumanoidRootPart
-        local Mace : Model = Assets:WaitForChild('MaceDummy'):WaitForChild('Mace'):Clone()
-        OthersModule:Weld(Mace.Handle, Character['RightHand'], Mace.Handle.WeldValue.Value.CFrame:Inverse() * Mace.Handle.CFrame)
-        Mace.Parent = Character
-        
+
         local MAX_COMBO = 4
         local onCooldown = false
         local combo = 0
@@ -73,6 +71,7 @@ local Dragon = {
 
         ContextActionService:BindAction('Attack', function(ActionName: string, InputState: Enum.UserInputState, _InputObjects: any)
             if (InputState ~= Enum.UserInputState.Begin) then return end
+            if (self:GetAttribute('Stunned') == true or self:GetAttribute('Attacking') == true) then return end
             if (onCooldown) then return end
             onCooldown = true
 
@@ -86,9 +85,23 @@ local Dragon = {
                     combo = 1
                 end
             end
+
+            task.spawn(function()
+                if (HumanoidRootPart:FindFirstChild('BodyGyro')) then return end
+                local BodyGyro : BodyGyro = Hold(Character)
+                while (os.clock() < lastCombo + 2 and self:GetAttribute('Attacking') == false and self:GetAttribute('Stunned') == false) do
+                    Humanoid.AutoRotate = false
+                    BodyGyro.CFrame = CFrame.new(HumanoidRootPart.CFrame.Position, Vector3.new(Mouse.Hit.Position.X, Mouse.Hit.Position.Y, Mouse.Hit.Position.Z))
+                    RunService.Heartbeat:Wait()
+                end
+                BodyGyro:Destroy()
+                Humanoid.AutoRotate = true
+            end)
             
             local oldWalkSpeed = Humanoid.WalkSpeed
-            Humanoid.WalkSpeed = 0
+            Humanoid.WalkSpeed = 0            
+
+            local Mace = Character:WaitForChild('Mace')
 
             local MaceSwing : Sound = Audios:WaitForChild('MaceSwing'):Clone()
             MaceSwing.Parent = Mace
@@ -96,50 +109,80 @@ local Dragon = {
             Debris:AddItem(MaceSwing, MaceSwing.TimeLength)
 
             local AttackAnim : AnimationTrack =  Humanoid:LoadAnimation(Animations:WaitForChild('Hit' .. combo))
-            if (combo == 3) then
-                local connection : RBXScriptConnection
-                connection = AttackAnim:GetMarkerReachedSignal('Earthquake'):Connect(function()
-                    local RockImpact : Sound = Audios:WaitForChild('RockImpact'):Clone()
-                    RockImpact.Parent = Mace
-                    RockImpact:Play()
-                    Debris:AddItem(RockImpact, RockImpact.TimeLength)
-
-                    RockModule.Ground(
-                        Mace:GetModelCFrame().Position + Vector3.new(0,0, -0.5),
-                        5,
-                        Vector3.new(2, 1, 1),
-                        { workspace.VFX, workspace.Enemies, workspace.Characters, Character },
-                        5,
-                        false,
-                        3
-                    )
-
-                    if (self == Player) then
-                        local CurrentCamera = workspace.CurrentCamera
-                        local CameraShake = CameraShakerModule.new(Enum.RenderPriority.Camera.Value, function(cframe)
-                            CurrentCamera.CFrame = CurrentCamera.CFrame * cframe
-                        end)
-                        CameraShake:ShakeSustain(CameraShake.Presets.Explosion)
-                        CameraShake:Start()
-                        task.wait(.2)
-                        CameraShake:StopSustained(.5)
-                    end
-                    connection:Disconnect()
-                end)
-            end
             AttackAnim:Play()
 
-            local BodyVelocity = Instance.new('BodyVelocity', HumanoidRootPart)
-            BodyVelocity.MaxForce = Vector3.new(99999, 0, 99999)
-            BodyVelocity.P = 10
-            BodyVelocity.Velocity = Character:GetModelCFrame().LookVector * 20
-            Debris:AddItem(BodyVelocity, .1)
+            if (combo == 4) then
+                local connection : RBXScriptConnection
+                connection = AttackAnim:GetMarkerReachedSignal('Hit'):Connect(function()
+                    print('shitt')
+                    local BodyVelocity = Instance.new('BodyVelocity', HumanoidRootPart)
+                    BodyVelocity.MaxForce = Vector3.new(99999, 99999, 99999)
+                    BodyVelocity.P = 10
+                    BodyVelocity.Velocity = Character:GetModelCFrame().LookVector * (combo < MAX_COMBO and 20 or 50)
+                    Debris:AddItem(BodyVelocity, .2)
+
+                    task.wait(.3)
+
+                    local HitBox = Instance.new('Part')
+                    HitBox.Size = Vector3.new(7, 5, 10)
+                    HitBox.Anchored = true
+                    HitBox.CanCollide = false
+                    HitBox.CFrame = Character:GetModelCFrame() * CFrame.new(0, 0, -HitBox.Size.Z / 2 - 5)
+                    HitBox.Parent = workspace.VFX
+
+                    local Zone = ZoneModule.new(HitBox)
+                    local Result = Zone:getParts()
+                    local RemoteEvent : RemoteEvent = Character:FindFirstChildWhichIsA('Tool'):WaitForChild('RemoteEvent')
+                    RemoteEvent:FireServer('Damage', 'Attack', {
+                        Combo = combo,
+                        HitData = Result
+                    })
+
+                    HitBox:Destroy()
+                    Zone:destroy()
+                    connection:Disconnect()
+                end)
+            else
+                local BodyVelocity = Instance.new('BodyVelocity', HumanoidRootPart)
+                BodyVelocity.MaxForce = Vector3.new(99999, 99999, 99999)
+                BodyVelocity.P = 10
+                BodyVelocity.Velocity = Character:GetModelCFrame().LookVector * (combo < MAX_COMBO and 20 or 50)
+                Debris:AddItem(BodyVelocity, .2)
+
+                local HitBox = Instance.new('Part')
+                HitBox.Size = Vector3.new(7, 5, 10)
+                HitBox.Anchored = true
+                HitBox.CanCollide = false
+                HitBox.CFrame = Character:GetModelCFrame() * CFrame.new(0, 0, -HitBox.Size.Z / 2 - 5)
+                HitBox.Parent = workspace.VFX
+
+                local Zone = ZoneModule.new(HitBox)
+                local Result = Zone:getParts()
+                local RemoteEvent : RemoteEvent = Character:FindFirstChildWhichIsA('Tool'):WaitForChild('RemoteEvent')
+                RemoteEvent:FireServer('Damage', 'Attack', {
+                    Combo = combo,
+                    HitData = Result
+                })
+
+                HitBox:Destroy()
+                Zone:destroy()
+            end
 
             task.delay(AttackAnim.Length, function()
                 onCooldown = false
                 Humanoid.WalkSpeed = 16
             end)
         end, false, Enum.UserInputType.MouseButton1)
+    end,
+    ['Sword'] = function(self : Player, ... : any)
+        local data : table = ...
+        local Player : Player = data['Player']
+        local Character : Model = data['Character']
+        local Humanoid : Instance = Character.Humanoid
+        local HumanoidRootPart : BasePart = Character.HumanoidRootPart
+        local Mace : Model = Assets:WaitForChild('MaceDummy'):WaitForChild('Mace'):Clone()
+        OthersModule:Weld(Mace.Handle, Character['RightHand'], Mace.Handle.WeldValue.Value.CFrame:Inverse() * Mace.Handle.CFrame)
+        Mace.Parent = Character
     end,
     ['DestroySword'] = function(self : Player, ... : any)
         local data : table = ...
@@ -148,6 +191,58 @@ local Dragon = {
         
         Character:WaitForChild('Mace'):Destroy()
         ContextActionService:UnbindAction('Attack')
+    end,
+    ['SwordGround'] = function(self : Player, ... : any)
+        local data : table = ...
+        local Player : Player = data['Player']
+        local Character : Model = data['Character']
+
+        local Mace = Character:WaitForChild('Mace')
+
+        task.wait(.15)
+        local RockImpact : Sound = Audios:WaitForChild('RockImpact'):Clone()
+        RockImpact.Parent = Mace
+        RockImpact:Play()
+        Debris:AddItem(RockImpact, RockImpact.TimeLength)
+
+        local Crack : BasePart = VFX:WaitForChild('Crack'):Clone()
+        Crack.Position = Mace:GetModelCFrame().Position + Vector3.new(0,0, -0.5)
+        Crack.Parent = VFX
+
+        task.delay(4, function()
+            local tween = TweenService:Create(
+                Crack,
+                TweenInfo.new(1),
+                { Size = Vector3.new(0, 0, 0), Transparency = 1 }
+            )
+            tween:Play()
+            tween.Completed:Wait()
+            Crack:Destroy()
+        end)
+        
+        RockModule.Ground(
+            Mace:GetModelCFrame().Position + Vector3.new(0,0, -0.5),
+            5,
+            Vector3.new(2, 1, 1),
+            { workspace.VFX, workspace.Enemies, workspace.Characters, Character },
+            5,
+            false,
+            3
+        )
+
+        if (self == Player) then
+            local CurrentCamera = workspace.CurrentCamera
+            local CameraShake = CameraShakerModule.new(Enum.RenderPriority.Camera.Value, function(cframe)
+                CurrentCamera.CFrame = CurrentCamera.CFrame * cframe
+            end)
+            CameraShake:ShakeSustain(CameraShake.Presets.Explosion)
+            CameraShake:Start()
+            task.wait(.2)
+            CameraShake:StopSustained(.5)
+        end
+    end,
+    ['Hit'] = function(self : Player, ... : any)
+
     end,
     ['BeamCharge'] = function(self : Player, ... : any)
         local data : table = ...
@@ -158,9 +253,7 @@ local Dragon = {
         local Mouse = self:GetMouse()
         local BodyGyro : BodyGyro = Hold(Character)
         BodyGyro.CFrame = CFrame.new(HumanoidRootPart.CFrame.Position, Vector3.new(Mouse.Hit.Position.X, Mouse.Hit.Position.Y, Mouse.Hit.Position.Z))
-
         Humanoid.AutoRotate = false
-
 
         local BeamChargeAnim : AnimationTrack = Humanoid:LoadAnimation(Animations:WaitForChild('BeamCharge'))
         BeamChargeAnim:Play()
@@ -234,8 +327,6 @@ local Dragon = {
             RunService.Heartbeat:Wait()
         end
 
-        BodyGyro:Destroy()
-
         TweenService:Create(FireChargeSound, TweenInfo.new(
             1,
             Enum.EasingStyle.Linear,
@@ -246,6 +337,11 @@ local Dragon = {
             Enum.EasingStyle.Linear,
             Enum.EasingDirection.InOut
         ), { Volume = 0 }):Play()
+        
+        while (BeamCharge:GetScale() > 0.1) do
+            BeamCharge:ScaleTo(BeamCharge:GetScale() - 0.1)
+            task.wait(.05)
+        end
 
         local MouseHit = Player:GetAttribute('MouseHit')
         local TargetDirection = (MouseHit - HumanoidRootPart.Position).Unit
@@ -262,11 +358,6 @@ local Dragon = {
         else
             HitPosition = HumanoidRootPart.Position + DirectionVector
         end
-        
-        while (BeamCharge:GetScale() > 0.1) do
-            BeamCharge:ScaleTo(BeamCharge:GetScale() - 0.1)
-            task.wait(.05)
-        end
 
         for i, v in pairs(BeamCharge.PrimaryPart.Attachment:GetChildren()) do
             v.Enabled = false
@@ -278,6 +369,8 @@ local Dragon = {
         local DragonBeamFireAnim : AnimationTrack = Humanoid:LoadAnimation(Animations:WaitForChild('DragonBeamFire'))
         local connection : RBXScriptConnection
         connection = DragonBeamFireAnim:GetMarkerReachedSignal('Fire'):Connect(function()
+            BodyGyro.CFrame = CFrame.new(HumanoidRootPart.CFrame.Position, HitPosition)
+            BodyGyro:Destroy()
             DragonBeamFireAnim:AdjustSpeed(0)
             local BeamShot : Sound = Audios:WaitForChild('BeamShot'):Clone()
             BeamShot.Parent = workspace.Sounds
@@ -391,8 +484,8 @@ local Dragon = {
             FireChargeSound:Destroy()
             BeamShot:Destroy()
             BeamChargeSound:Destroy()
-            Humanoid.AutoRotate = true
             connection:Disconnect()
+            Humanoid.AutoRotate = true
         end)
 
         DragonBeamFireAnim:Play()
